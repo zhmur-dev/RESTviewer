@@ -1,0 +1,1229 @@
+openapi: 3.0.2
+info:
+  title: 'RESTviewer'
+  version: ''
+  description: |
+    Your journey with API requests starts here: `https://<your_server_or_localhost>/api/v1/`
+    # Description
+    **RESTviewer** is a RESTful API service based on Django REST Framework that can be used for publishing and sharing user reviews for various titles. Developed as pure API, it is not shipped with any frontend interface apart from standard DRF view. You can try following the steps below starting from user registration process to test the service.
+    # User registration process
+    1. User sends a POST request to add a new user with `email` and `username` parameters to endpoint `/api/v1/auth/signup/`.
+    2. **RESTviewer** sends a `confirmation_code` to `email`. In debug mode, emails are saved as log files in `sent_emails` folder.
+    3. User sends a POST request with `username` and `confirmation_code` parameters to endpoint `/api/v1/auth/token/` and gets a `token` (JWT token) in response.
+    4. User might want to complete his profile and sends a PATCH request to endpoint `/api/v1/users/me/` (see description below).
+    # User roles
+    - **Anonymous** — can only view descriptions, read reviews and comments.
+    - **Authenticated** (`user`) — on top of what **Anonymous** can do, is able to read all, publish own reviews, rate titles, comment on other users reviews; edit or delete **own** reviews and comments. This is a default role for every new user.
+    - **Moderator** (`moderator`) — has the same permissions as **Authenticated**, but is able to delete **any** reviews and comments.
+    - **Administrator** (`admin`) — has complete control over the content. Can create and delete new titles, categories and genres, and assign roles to other users. 
+    - **Django superuser** — has the administrator permissions (`admin`).
+servers:
+  - url: /api/v1/
+
+tags:
+  - name: AUTH
+    description: User registration and token issue
+  - name: CATEGORIES
+    description: Categories of titles
+  - name: GENRES
+    description: Genres of titles
+  - name: TITLES
+    description: Titles for review
+  - name: REVIEWS
+    description: Reviews
+  - name: COMMENTS
+    description: Comments
+  - name: USERS
+    description: Users
+
+paths:
+  /auth/signup/:
+    post:
+      tags:
+        - AUTH
+      operationId: New user registration
+      description: |
+        Get a confirmation code for provided `email`.
+        Permissions: **no token required**.
+        'me' cannot be used as a `username`.
+        `email` and `username` have to be unique.
+        Confirmation code can be sent multiple times.
+      parameters: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              required:
+                - email
+                - username
+              properties:
+                email:
+                  type: string
+                  format: email
+                  maxLength: 254
+                username:
+                  type: string
+                  pattern: ^[\w.@+-]+\Z
+                  maxLength: 150
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                properties:
+                  email:
+                    type: string
+                  username:
+                    type: string
+          description: Successful
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+          description: Mandatory field missing or invalid
+  /auth/token/:
+    post:
+      tags:
+        - AUTH
+      operationId: JWT token issue
+      description: |
+        JWT token issue in exchange for username and confirmation code.
+        Permissions: **no token required**.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              required:
+                - username
+                - confirmation_code
+              properties:
+                username:
+                  type: string
+                  pattern: ^[\w.@+-]+\Z
+                  maxLength: 150
+                confirmation_code:
+                  type: string
+                  writeOnly: true
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+          description: Successful
+        400:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+          description: Mandatory field missing or invalid
+        404:
+          description: User not found
+
+  /categories/:
+    get:
+      tags:
+        - CATEGORIES
+      operationId: Get Categories list
+      description: |
+        Get Categories list.
+        Permissions: **no token required**.
+      parameters:
+      - name: search
+        in: query
+        description: Search in Categories
+        schema:
+          type: string
+      responses:
+        200:
+          description: Successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  next:
+                    type: string
+                  previous:
+                    type: string
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+    post:
+      tags:
+        - CATEGORIES
+      operationId: Add new Category
+      description: |
+        Add new Category.
+        Permissions: **Administrator**.
+        Category `slug` has to be unique.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Category'
+      responses:
+        201:
+          description: Successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryRead'
+        400:
+          description: Mandatory field missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        401:
+          description: JWT token required
+        403:
+          description: Unauthorized
+      security:
+      - jwt-token:
+        - write:admin
+  /categories/{slug}/:
+    delete:
+      tags:
+        - CATEGORIES
+      operationId: Delete Category
+      description: |
+        Delete Category.
+        Permissions: **Administrator**.
+      parameters:
+      - name: slug
+        in: path
+        required: true
+        description: Category slug
+        schema:
+          type: string
+      responses:
+        204:
+          description: Successful
+        401:
+          description: JWT token required
+        403:
+          description: Unauthorized
+        404:
+          description: Category not found
+      security:
+      - jwt-token:
+        - write:admin
+
+  /genres/:
+    get:
+      tags:
+        - GENRES
+      operationId: Get Genres list
+      description: |
+        Get Genres list.
+        Permissions: **no token required**.
+      parameters:
+      - name: search
+        in: query
+        description: Search in Genres
+        schema:
+          type: string
+      responses:
+        200:
+          description: Successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  next:
+                    type: string
+                  previous:
+                    type: string
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Genre'
+    post:
+      tags:
+        - GENRES
+      operationId: Add Genre
+      description: |
+        Add Genre.
+        Permissions: **Administrator**.
+        Genre `slug` has to be unique.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Genre'
+      responses:
+        201:
+          description: Successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenreRead'
+        400:
+          description: Mandatory field missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        401:
+          description: JWT token required
+        403:
+          description: Unauthorized
+      security:
+      - jwt-token:
+        - write:admin
+
+  /genres/{slug}/:
+    delete:
+      tags:
+        - GENRES
+      operationId: Delete Genre
+      description: |
+        Delete Genre.
+        Permissions: **Administrator**.
+      parameters:
+      - name: slug
+        in: path
+        required: true
+        description: Genre slug
+        schema:
+          type: string
+      responses:
+        204:
+          description: Successful
+        401:
+          description: JWT token required
+        403:
+          description: Unauthorized
+        404:
+          description: Genre not found
+      security:
+      - jwt-token:
+        - write:admin
+
+  /titles/:
+    get:
+      tags:
+        - TITLES
+      operationId: Get Titles list
+      description: |
+        Get Titles list.
+        Permissions: **no token required**.
+      parameters:
+        - name: category
+          in: query
+          description: filter by Category slug
+          schema:
+            type: string
+        - name: genre
+          in: query
+          description: filter by Genre slug
+          schema:
+            type: string
+        - name: name
+          in: query
+          description: filter by Title
+          schema:
+            type: string
+        - name: year
+          in: query
+          description: filter by year
+          schema:
+            type: integer
+      responses:
+        200:
+          description: Successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  next:
+                    type: string
+                  previous:
+                    type: string
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Title'
+    post:
+      tags:
+        - TITLES
+      operationId: Add Title
+      description: |
+        Add Title.
+        Permissions: **Administrator**.
+        Forthcoming Titles cannot be added (year cannot be greater than current year).
+        It is mandatory to choose an existing Category and Genre for a new Title.
+      parameters: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TitleCreate'
+      responses:
+        201:
+          description: Successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Title'
+        400:
+          description: Mandatory field missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        401:
+          description: JWT token required
+        403:
+          description: Unauthorized
+      security:
+      - jwt-token:
+        - write:admin
+  /titles/{titles_id}/:
+    parameters:
+      - name: titles_id
+        in: path
+        required: true
+        description: Object ID
+        schema:
+          type: integer
+    get:
+      tags:
+        - TITLES
+      operationId: Get Title description
+      description: |
+        Get Title description
+        Permissions: **no token required**.
+      responses:
+        200:
+          description: Successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Title'
+        404:
+          description: Not found
+    patch:
+      tags:
+        - TITLES
+      operationId: Patch Title description
+      description: |
+        Patch Title description.
+        Permissions: **Administrator**
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TitleCreate'
+      responses:
+        200:
+          description: Successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Title'
+        401:
+          description: JWT token required
+        403:
+          description: Unauthorized
+        404:
+          description: Not found
+      security:
+      - jwt-token:
+        - write:admin
+    delete:
+      tags:
+        - TITLES
+      operationId: Delete Title
+      description: |
+        Delete Title.
+        Permissions: **Administrator**.
+      responses:
+        204:
+          description: Successful
+        401:
+          description: JWT token required
+        403:
+          description: Unauthorized
+        404:
+          description: Title not found
+      security:
+      - jwt-token:
+        - write:admin
+
+  /titles/{title_id}/reviews/:
+    parameters:
+      - name: title_id
+        in: path
+        required: true
+        description: Title ID
+        schema:
+          type: integer
+    get:
+      tags:
+        - REVIEWS
+      operationId: Get Reviews list
+      description: |
+        Get Reviews list.
+        Permissions: **no token required**.
+      responses:
+        200:
+          description: Successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  next:
+                    type: string
+                  previous:
+                    type: string
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Review'
+        404:
+          description: Title not found
+    post:
+      tags:
+        - REVIEWS
+      operationId: Add Review
+      description: |
+        Add Review. User can only post one review for each title.
+        Permissions: **Authenticated**.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Review'
+      responses:
+        201:
+          description: Successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Review'
+        400:
+          description: Mandatory field missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        401:
+          description: JWT token required
+        404:
+          description: Title not found
+      security:
+      - jwt-token:
+        - write:user,moderator,admin
+  /titles/{title_id}/reviews/{review_id}/:
+    parameters:
+      - name: title_id
+        in: path
+        required: true
+        description: Title ID
+        schema:
+          type: integer
+      - name: review_id
+        in: path
+        required: true
+        description: Review ID
+        schema:
+          type: integer
+    get:
+      tags:
+        - REVIEWS
+      operationId: Get Review by ID
+      description: |
+        Get Review by ID.
+        Permissions: **no token required**
+      responses:
+        200:
+          description: Successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Review'
+        404:
+          description: Title or Review not found
+    patch:
+      tags:
+        - REVIEWS
+      operationId: Patch Review by ID
+      description: |
+        Patch Review by ID.
+        Permissions: **Review Author, Moderator or Administrator.**
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Review'
+      responses:
+        200:
+          description: Successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Review'
+        400:
+          description: Mandatory field missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        401:
+          description: JWT token required
+        403:
+          description: Unauthorized
+        404:
+          description: Title not found
+      security:
+      - jwt-token:
+        - write:user,moderator,admin
+    delete:
+      tags:
+        - REVIEWS
+      operationId: Delete review by ID
+      description: |
+        Delete review by ID
+        Permissions: **Review Author, Moderator or Administrator.**
+      responses:
+        204:
+          description: Successful
+        401:
+          description: JWT token required
+        403:
+          description: Unauthorized
+        404:
+          description: Title or Review not found
+      security:
+      - jwt-token:
+        - write:user,moderator,admin
+
+  /titles/{title_id}/reviews/{review_id}/comments/:
+    parameters:
+      - name: title_id
+        in: path
+        required: true
+        description: Title ID
+        schema:
+          type: integer
+      - name: review_id
+        in: path
+        required: true
+        description: Review ID
+        schema:
+          type: integer
+    get:
+      tags:
+        - COMMENTS
+      operationId: Get Comment list to Review
+      description: |
+        Get Comment list to Review by ID
+        Permissions: **no token required**.
+      responses:
+        200:
+          description: Successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  next:
+                    type: string
+                  previous:
+                    type: string
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Comment'
+        404:
+          description: Title or Review not found
+    post:
+      tags:
+        - COMMENTS
+      operationId: Add Comment to Review
+      description: |
+        Add Comment to Review.
+        Permissions: **Authenticated**.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Comment'
+      responses:
+        201:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+          description: Successful
+        400:
+          description: Mandatory field missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        401:
+          description: JWT token required
+        404:
+          description: Title or Review not found
+      security:
+      - jwt-token:
+        - write:user,moderator,admin
+
+  /titles/{title_id}/reviews/{review_id}/comments/{comment_id}/:
+    parameters:
+      - name: title_id
+        in: path
+        required: true
+        description: Title ID
+        schema:
+          type: integer
+      - name: review_id
+        in: path
+        required: true
+        description: Review ID
+        schema:
+          type: integer
+      - name: comment_id
+        in: path
+        required: true
+        description: Comment ID
+        schema:
+          type: integer
+    get:
+      tags:
+        - COMMENTS
+      operationId: Get Comment to Review
+      description: |
+        Get Comment to Review by ID.
+        Permissions: **no token required**.
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+          description: Successful
+        404:
+          description: Title, Review or Comment not found
+    patch:
+      tags:
+        - COMMENTS
+      operationId: Patch Comment to Review
+      description: |
+        Patch Comment to Review by ID.
+        Permissions: **Comment Author, Moderator or Administrator**.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Comment'
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+          description: Successful
+        400:
+          description: Mandatory field missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        401:
+          description: JWT token required
+        403:
+          description: Unauthorized
+        404:
+          description: Title, Review or Comment not found
+      security:
+      - jwt-token:
+        - write:user,moderator,admin
+    delete:
+      tags:
+        - COMMENTS
+      operationId: Delete Comment to Review
+      description: |
+        Delete Comment to Review by ID.
+        Permissions: **Comment Author, Moderator or Administrator**.
+      responses:
+        204:
+          description: Successful
+        401:
+          description: JWT token required
+        403:
+          description: Unauthorized
+        404:
+          description: Title, Review or Comment not found
+      security:
+      - jwt-token:
+        - write:user,moderator,admin
+
+  /users/:
+    get:
+      tags:
+        - USERS
+      operationId: Get User list
+      description: |
+        Get User list.
+        Permissions: **Administrator**.
+      parameters:
+      - name: search
+        in: query
+        description: Search by username
+        schema:
+          type: string
+      responses:
+        200:
+          description: Successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  next:
+                    type: string
+                  previous:
+                    type: string
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+        401:
+          description: JWT token required
+      security:
+      - jwt-token:
+        - read:admin
+    post:
+      tags:
+        - USERS
+      operationId: Add User
+      description: |
+        Add User.
+        Permissions: **Administrator**
+        `email` and `username` must be unique.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
+      responses:
+        201:
+          description: Successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        400:
+          description: Mandatory field missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        401:
+          description: JWT token required
+        403:
+          description: Unauthorized
+      security:
+      - jwt-token:
+        - write:admin
+  /users/{username}/:
+    parameters:
+      - name: username
+        in: path
+        required: true
+        description: Username
+        schema:
+          type: string
+    get:
+      tags:
+        - USERS
+      operationId: Get User by username
+      description: |
+        Get User by username.
+        Permissions: **Administrator**
+      responses:
+        200:
+          description: Successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        401:
+          description: JWT token required
+        403:
+          description: Unauthorized
+        404:
+          description: User not found
+      security:
+      - jwt-token:
+        - read:admin
+    patch:
+      tags:
+        - USERS
+      operationId: Change User data by username
+      description: |
+        Change User data by username.
+        Permissions: **Administrator**.
+        `email` and `username` must be unique.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
+      responses:
+        200:
+          description: Successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        400:
+          description: Mandatory field missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        401:
+          description: JWT token required
+        403:
+          description: Unauthorized
+        404:
+          description: User not found
+      security:
+      - jwt-token:
+        - write:admin
+    delete:
+      tags:
+        - USERS
+      operationId: Delete User by username
+      description: |
+        Delete User by username.
+        Permissions: **Administrator.**
+      responses:
+        204:
+          description: Successful
+        401:
+          description: JWT token required
+        403:
+          description: Unauthorized
+        404:
+          description: User not found
+      security:
+      - jwt-token:
+        - write:admin
+
+  /users/me/:
+    get:
+      tags:
+        - USERS
+      operationId: Get own account data
+      description: |
+        Get own account data
+        Permissions: **Authorized**.
+      responses:
+        200:
+          description: Successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+      security:
+      - jwt-token:
+        - read:admin,moderator,user
+    patch:
+      tags:
+        - USERS
+      operationId: Change own account data
+      description: |
+        Change own account data
+        Permissions: **Authorized**
+        `email` and `username` must be unique.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Me'
+      responses:
+        200:
+          description: Successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        400:
+          description: Mandatory field missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+      security:
+      - jwt-token:
+        - write:admin,moderator,user
+
+components:
+  schemas:
+
+    User:
+      title: User
+      type: object
+      description: User detailed information
+      required:
+          - username
+          - email
+      properties:
+        username:
+          type: string
+          description: Required. 150 characters or fewer. Letters, digits and @/./+/-/_
+            only.
+          pattern: ^[\w.@+-]+\Z
+          maxLength: 150
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        first_name:
+          type: string
+          maxLength: 150
+        last_name:
+          type: string
+          maxLength: 150
+        bio:
+          type: string
+        role:
+          type: string
+          description: Administrator, moderator or user. 'user' by default.
+          enum:
+            - user
+            - moderator
+            - admin
+
+    Title:
+      title: Object
+      type: object
+      properties:
+        id:
+          type: integer
+          title: Title ID
+          readOnly: true
+        name:
+          type: string
+          title: Name
+        year:
+          type: integer
+          title: Year of issue
+        rating:
+          type: integer
+          readOnly: True
+          title: Rating based on reviews, `None` for missing reviews.
+        description:
+          type: string
+          title: Description
+        genre:
+          type: array
+          items:
+            $ref: '#/components/schemas/Genre'
+        category:
+          $ref: '#/components/schemas/Category'
+
+    TitleCreate:
+      title: Object to change
+      type: object
+      required:
+        - name
+        - year
+        - genre
+        - category
+      properties:
+        name:
+          type: string
+          title: Title
+          maxLength: 256
+        year:
+          type: integer
+          title: Year of issue
+        description:
+          type: string
+          title: Description
+        genre:
+          type: array
+          items:
+            type: string
+            title: Genre slug
+        category:
+          type: string
+          title: Category slug
+
+    Genre:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 256
+        slug:
+          type: string
+          maxLength: 50
+          pattern: ^[-a-zA-Z0-9_]+$
+      required:
+      - name
+      - slug
+    
+    GenreRead:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+
+    Review:
+      title: Review
+      type: object
+      description: Review detailed information
+      required:
+          - text
+          - score
+      properties:
+        id:
+          type: integer
+          title: Review ID
+          readOnly: true
+        text:
+          type: string
+          title: Review text
+        author:
+          type: string
+          title: Review author username
+          readOnly: true
+        score:
+          type: integer
+          title: Score
+          minimum: 1
+          maximum: 10
+        pub_date:
+          type: string
+          format: date-time
+          title: Review published date
+          readOnly: true
+
+    ValidationError:
+      title: Validation error
+      type: object
+      properties:
+        field_name:
+          type: array
+          items:
+            type: string
+
+    Token:
+      title: Token
+      type: object
+      properties:
+        token:
+          type: string
+          title: access token
+
+    Comment:
+      title: Comment
+      type: object
+      description: Comment detailed information
+      required:
+        - text
+      properties:
+        id:
+          type: integer
+          title: Comment ID
+          readOnly: true
+        text:
+          type: string
+          title: Comment text
+        author:
+          type: string
+          title: Comment author username
+          readOnly: true
+        pub_date:
+          type: string
+          format: date-time
+          title: Comment published date
+          readOnly: true
+
+    Me:
+      type: object
+      properties:
+        username:
+          type: string
+          description: Required. 150 characters or fewer. Letters, digits and @/./+/-/_
+            only.
+          pattern: ^[\w.@+-]+\Z
+          maxLength: 150
+        role:
+          enum:
+          - admin
+          - moderator
+          - user
+          type: string
+          readOnly: true
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        first_name:
+          type: string
+          maxLength: 150
+        last_name:
+          type: string
+          maxLength: 150
+        bio:
+          type: string
+      required:
+      - username
+      - email
+
+    Category:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 256
+        slug:
+          type: string
+          maxLength: 50
+          pattern: ^[-a-zA-Z0-9_]+$
+      required:
+      - name
+      - slug
+
+    CategoryRead:
+      type: object
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+
+  securitySchemes:
+    jwt-token:
+      type: apiKey
+      description: Authentication with JWT tokens
+      name: Bearer
+      in: header
